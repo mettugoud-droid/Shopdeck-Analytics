@@ -1,11 +1,24 @@
-import { createContext, useContext, useState, useMemo } from 'react';
+import { createContext, useContext, useState, useMemo, useEffect, useCallback } from 'react';
 import { subDays } from 'date-fns';
 import { generateAllMockData } from '../data/mockData';
+import { saveToStorage, loadFromStorage, hasStoredData, clearStorage, getStorageMeta } from '../utils/storage';
 
 const DashboardContext = createContext(null);
 
+function initializeData() {
+  // Try to load from localStorage first
+  const stored = loadFromStorage();
+  if (stored) {
+    console.log('[Dashboard] Loaded data from localStorage');
+    return stored;
+  }
+  // Fall back to mock data
+  console.log('[Dashboard] No stored data found, using mock data');
+  return generateAllMockData();
+}
+
 export function DashboardProvider({ children }) {
-  const [data, setData] = useState(() => generateAllMockData());
+  const [data, setDataRaw] = useState(initializeData);
   const [dateRange, setDateRange] = useState({
     start: subDays(new Date(), 30),
     end: new Date(),
@@ -17,6 +30,38 @@ export function DashboardProvider({ children }) {
     status: 'all',
     city: 'all',
   });
+  const [dataSource, setDataSource] = useState(() =>
+    hasStoredData() ? 'localStorage' : 'mock'
+  );
+
+  // Persist data to localStorage whenever it changes (debounced)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const saved = saveToStorage(data);
+      if (saved) {
+        setDataSource('localStorage');
+      }
+    }, 500); // debounce 500ms
+
+    return () => clearTimeout(timer);
+  }, [data]);
+
+  // Wrapped setData that also updates source indicator
+  const setData = useCallback((updater) => {
+    setDataRaw(updater);
+    setDataSource('uploaded');
+  }, []);
+
+  // Reset to mock data and clear storage
+  const resetToMockData = useCallback(() => {
+    clearStorage();
+    const mockData = generateAllMockData();
+    setDataRaw(mockData);
+    setDataSource('mock');
+  }, []);
+
+  // Get storage metadata
+  const storageMeta = useMemo(() => getStorageMeta(), [data]);
 
   const value = useMemo(() => ({
     data,
@@ -27,7 +72,10 @@ export function DashboardProvider({ children }) {
     setActiveTab,
     filters,
     setFilters,
-  }), [data, dateRange, activeTab, filters]);
+    dataSource,
+    storageMeta,
+    resetToMockData,
+  }), [data, setData, dateRange, activeTab, filters, dataSource, storageMeta, resetToMockData]);
 
   return (
     <DashboardContext.Provider value={value}>
