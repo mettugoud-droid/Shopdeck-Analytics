@@ -46,9 +46,36 @@ export function DashboardProvider({ children }) {
     return () => clearTimeout(timer);
   }, [data]);
 
-  // Wrapped setData that also updates source indicator
+  // Wrapped setData that also updates source indicator and auto-adjusts date range
   const setData = useCallback((updater) => {
-    setDataRaw(updater);
+    setDataRaw(prev => {
+      const newData = typeof updater === 'function' ? updater(prev) : updater;
+
+      // Auto-adjust date range to cover uploaded order data
+      if (newData.orders && newData.orders.length > 0) {
+        const dates = newData.orders
+          .map(o => {
+            if (!o.date) return null;
+            const d = o.date instanceof Date ? o.date : new Date(o.date);
+            return isNaN(d.getTime()) ? null : d;
+          })
+          .filter(Boolean);
+
+        if (dates.length > 0) {
+          const minDate = new Date(Math.min(...dates.map(d => d.getTime())));
+          const maxDate = new Date(Math.max(...dates.map(d => d.getTime())));
+
+          // Expand date range to cover all uploaded data
+          setDateRange({
+            start: minDate,
+            end: maxDate,
+            label: 'All Data',
+          });
+        }
+      }
+
+      return newData;
+    });
     setDataSource('uploaded');
   }, []);
 

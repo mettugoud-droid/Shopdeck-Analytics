@@ -1,6 +1,6 @@
-import { Calendar, ChevronDown, RefreshCw, Download, Bell } from 'lucide-react';
+import { Calendar, ChevronDown, RefreshCw, Download, Bell, Database } from 'lucide-react';
 import { useState } from 'react';
-import { subDays, format } from 'date-fns';
+import { subDays, format, subMonths } from 'date-fns';
 import { useDashboard } from '../../context/DashboardContext';
 
 const datePresets = [
@@ -9,10 +9,12 @@ const datePresets = [
   { label: 'Last 30 Days', days: 30 },
   { label: 'Last 60 Days', days: 60 },
   { label: 'Last 90 Days', days: 90 },
+  { label: 'Last 6 Months', days: 180 },
+  { label: 'Last 12 Months', days: 365 },
 ];
 
 export default function Header() {
-  const { dateRange, setDateRange } = useDashboard();
+  const { dateRange, setDateRange, data, dataSource } = useDashboard();
   const [showDatePicker, setShowDatePicker] = useState(false);
 
   const handlePreset = (preset) => {
@@ -24,14 +26,50 @@ export default function Header() {
     setShowDatePicker(false);
   };
 
+  const handleAllData = () => {
+    // Find min/max dates from all orders
+    const dates = (data.orders || [])
+      .map(o => {
+        if (!o.date) return null;
+        const d = o.date instanceof Date ? o.date : new Date(o.date);
+        return isNaN(d.getTime()) ? null : d;
+      })
+      .filter(Boolean);
+
+    if (dates.length > 0) {
+      setDateRange({
+        start: new Date(Math.min(...dates.map(d => d.getTime()))),
+        end: new Date(Math.max(...dates.map(d => d.getTime()))),
+        label: 'All Data',
+      });
+    }
+    setShowDatePicker(false);
+  };
+
+  const formatDate = (d) => {
+    try {
+      const date = d instanceof Date ? d : new Date(d);
+      return format(date, 'MMM dd, yyyy');
+    } catch {
+      return 'Invalid';
+    }
+  };
+
   return (
     <header className="sticky top-0 z-20 bg-white/80 backdrop-blur-md border-b border-gray-100 px-6 py-3">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-bold text-gray-900">Dashboard Overview</h2>
-          <p className="text-xs text-gray-500">
-            {format(dateRange.start, 'MMM dd, yyyy')} — {format(dateRange.end, 'MMM dd, yyyy')}
-          </p>
+          <div className="flex items-center gap-2">
+            <p className="text-xs text-gray-500">
+              {formatDate(dateRange.start)} — {formatDate(dateRange.end)}
+            </p>
+            {dataSource === 'uploaded' && (
+              <span className="inline-flex items-center gap-1 text-xs bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded">
+                <Database size={10} /> Live Data
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center gap-3">
@@ -48,6 +86,13 @@ export default function Header() {
 
             {showDatePicker && (
               <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl py-1 w-44 z-50">
+                {/* All Data option */}
+                <button
+                  onClick={handleAllData}
+                  className="w-full text-left px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50 transition-colors border-b border-gray-100"
+                >
+                  All Data
+                </button>
                 {datePresets.map((preset) => (
                   <button
                     key={preset.days}

@@ -281,8 +281,49 @@ export function normalizeTaxData(rawData) {
 // Helpers
 function parseDate(value) {
   if (!value) return null;
-  const d = new Date(value);
-  return isNaN(d.getTime()) ? null : d;
+  if (value instanceof Date) return isNaN(value.getTime()) ? null : value;
+
+  // Convert to string for processing
+  const str = String(value).trim();
+  if (!str) return null;
+
+  // Try native Date parse first (handles ISO, "Mon DD YYYY", etc.)
+  let d = new Date(str);
+  if (!isNaN(d.getTime())) return d;
+
+  // Handle DD-MM-YYYY or DD/MM/YYYY (common Indian format)
+  const ddmmyyyy = str.match(/^(\d{1,2})[\-\/\.](\d{1,2})[\-\/\.](\d{4})$/);
+  if (ddmmyyyy) {
+    const [, day, month, year] = ddmmyyyy;
+    d = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  // Handle YYYY/MM/DD
+  const yyyymmdd = str.match(/^(\d{4})[\-\/\.](\d{1,2})[\-\/\.](\d{1,2})$/);
+  if (yyyymmdd) {
+    const [, year, month, day] = yyyymmdd;
+    d = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  // Handle DD MMM YYYY or DD-MMM-YYYY (e.g., "25 Jun 2025", "25-Jun-2025")
+  const ddMmmYyyy = str.match(/^(\d{1,2})[\s\-]([A-Za-z]{3,9})[\s\-](\d{4})$/);
+  if (ddMmmYyyy) {
+    d = new Date(str);
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  // Handle Excel serial date number
+  const num = parseFloat(str);
+  if (!isNaN(num) && num > 10000 && num < 100000) {
+    // Excel date serial: days since 1900-01-01 (with Excel's leap year bug)
+    const excelEpoch = new Date(1899, 11, 30); // Dec 30, 1899
+    d = new Date(excelEpoch.getTime() + num * 86400000);
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  return null;
 }
 
 function inferCategory(type) {

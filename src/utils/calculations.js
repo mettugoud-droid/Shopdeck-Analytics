@@ -31,11 +31,19 @@ export function calculateKPIs(orders, dateRange) {
 export function calculateOrderTrends(orders, dateRange, granularity = 'daily') {
   const filtered = filterByDateRange(orders, dateRange);
 
+  if (filtered.length === 0) return [];
+
   if (granularity === 'daily') {
-    const days = eachDayOfInterval({ start: dateRange.start, end: dateRange.end });
+    const start = dateRange.start instanceof Date ? dateRange.start : new Date(dateRange.start);
+    const end = dateRange.end instanceof Date ? dateRange.end : new Date(dateRange.end);
+    const days = eachDayOfInterval({ start, end });
     return days.map(day => {
       const dayStr = format(day, 'yyyy-MM-dd');
-      const dayOrders = filtered.filter(o => o.date && format(o.date, 'yyyy-MM-dd') === dayStr);
+      const dayOrders = filtered.filter(o => {
+        if (!o.date) return false;
+        const d = o.date instanceof Date ? o.date : new Date(o.date);
+        return !isNaN(d.getTime()) && format(d, 'yyyy-MM-dd') === dayStr;
+      });
       return {
         date: format(day, 'MMM dd'),
         fullDate: dayStr,
@@ -46,10 +54,16 @@ export function calculateOrderTrends(orders, dateRange, granularity = 'daily') {
   }
 
   if (granularity === 'monthly') {
-    const months = eachMonthOfInterval({ start: dateRange.start, end: dateRange.end });
+    const start = dateRange.start instanceof Date ? dateRange.start : new Date(dateRange.start);
+    const end = dateRange.end instanceof Date ? dateRange.end : new Date(dateRange.end);
+    const months = eachMonthOfInterval({ start, end });
     return months.map(month => {
       const monthStr = format(month, 'yyyy-MM');
-      const monthOrders = filtered.filter(o => o.date && format(o.date, 'yyyy-MM') === monthStr);
+      const monthOrders = filtered.filter(o => {
+        if (!o.date) return false;
+        const d = o.date instanceof Date ? o.date : new Date(o.date);
+        return !isNaN(d.getTime()) && format(d, 'yyyy-MM') === monthStr;
+      });
       return {
         date: format(month, 'MMM yyyy'),
         fullDate: monthStr,
@@ -238,21 +252,32 @@ export function calculateCashflowMetrics(cashflow, dateRange) {
   const refundRate = totalRevenue > 0 ? (totalRefunds / totalRevenue * 100) : 0;
 
   // Monthly trend
-  const months = eachMonthOfInterval({ start: dateRange.start, end: dateRange.end });
-  const monthlyTrend = months.map(month => {
-    const monthStr = format(month, 'yyyy-MM');
-    const monthItems = filtered.filter(c => c.date && format(c.date, 'yyyy-MM') === monthStr);
-    const monthRevenue = sum(monthItems.filter(c => c.category === 'revenue'), 'amount');
-    const monthRefunds = Math.abs(sum(monthItems.filter(c => c.category === 'refund'), 'amount'));
-    const monthShipping = Math.abs(sum(monthItems.filter(c => c.category === 'shipping'), 'amount'));
-    return {
-      date: format(month, 'MMM yyyy'),
-      revenue: monthRevenue,
-      refunds: monthRefunds,
-      shipping: monthShipping,
-      net: monthRevenue - monthRefunds - monthShipping,
-    };
-  });
+  const start = dateRange.start instanceof Date ? dateRange.start : new Date(dateRange.start);
+  const end = dateRange.end instanceof Date ? dateRange.end : new Date(dateRange.end);
+  let monthlyTrend = [];
+  try {
+    const months = eachMonthOfInterval({ start, end });
+    monthlyTrend = months.map(month => {
+      const monthStr = format(month, 'yyyy-MM');
+      const monthItems = filtered.filter(c => {
+        if (!c.date) return false;
+        const d = c.date instanceof Date ? c.date : new Date(c.date);
+        return !isNaN(d.getTime()) && format(d, 'yyyy-MM') === monthStr;
+      });
+      const monthRevenue = sum(monthItems.filter(c => c.category === 'revenue'), 'amount');
+      const monthRefunds = Math.abs(sum(monthItems.filter(c => c.category === 'refund'), 'amount'));
+      const monthShipping = Math.abs(sum(monthItems.filter(c => c.category === 'shipping'), 'amount'));
+      return {
+        date: format(month, 'MMM yyyy'),
+        revenue: monthRevenue,
+        refunds: monthRefunds,
+        shipping: monthShipping,
+        net: monthRevenue - monthRefunds - monthShipping,
+      };
+    });
+  } catch {
+    // If date interval fails, return empty trend
+  }
 
   return {
     totalRevenue,
@@ -294,10 +319,34 @@ export function calculateWhatsAppMetrics(campaigns) {
 
 export function filterByDateRange(data, dateRange, dateField = 'date') {
   if (!dateRange || !dateRange.start || !dateRange.end) return data;
-  return data.filter(item => {
+  if (!Array.isArray(data) || data.length === 0) return [];
+
+  const start = dateRange.start instanceof Date ? dateRange.start : new Date(dateRange.start);
+  const end = dateRange.end instanceof Date ? dateRange.end : new Date(dateRange.end);
+
+  // If no items have valid dates, return all data (don't filter out everything)
+  const hasAnyDates = data.some(item => {
     const d = item[dateField];
+    return d && (d instanceof Date ? !isNaN(d.getTime()) : !isNaN(new Date(d).getTime()));
+  });
+
+  if (!hasAnyDates) return data;
+
+  return data.filter(item => {
+    let d = item[dateField];
     if (!d) return false;
-    return isWithinInterval(d, { start: dateRange.start, end: dateRange.end });
+
+    // Ensure it's a Date object
+    if (!(d instanceof Date)) {
+      d = new Date(d);
+    }
+    if (isNaN(d.getTime())) return false;
+
+    try {
+      return isWithinInterval(d, { start, end });
+    } catch {
+      return false;
+    }
   });
 }
 
