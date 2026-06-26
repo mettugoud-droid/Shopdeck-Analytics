@@ -24,11 +24,17 @@ export function DashboardProvider({ children }) {
     end: new Date(),
     label: 'Last 30 Days',
   });
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState('command-center');
+  const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState({
     category: 'all',
     status: 'all',
     city: 'all',
+    state: 'all',
+    courier: 'all',
+    paymentMethod: 'all',
+    warehouse: 'all',
+    customer: 'all',
   });
   const [dataSource, setDataSource] = useState(() =>
     hasStoredData() ? 'localStorage' : 'mock'
@@ -99,10 +105,12 @@ export function DashboardProvider({ children }) {
     setActiveTab,
     filters,
     setFilters,
+    searchQuery,
+    setSearchQuery,
     dataSource,
     storageMeta,
     resetToMockData,
-  }), [data, setData, dateRange, activeTab, filters, dataSource, storageMeta, resetToMockData]);
+  }), [data, setData, dateRange, activeTab, filters, searchQuery, dataSource, storageMeta, resetToMockData]);
 
   return (
     <DashboardContext.Provider value={value}>
