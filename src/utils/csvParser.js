@@ -1,4 +1,22 @@
 import Papa from 'papaparse';
+import * as XLSX from 'xlsx';
+
+/**
+ * Detect file type and route to appropriate parser
+ */
+export function parseFile(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+
+  if (ext === 'csv' || ext === 'tsv' || ext === 'txt') {
+    return parseCSV(file);
+  }
+
+  if (ext === 'xls' || ext === 'xlsx' || ext === 'xlsb' || ext === 'xlsm') {
+    return parseExcel(file);
+  }
+
+  return Promise.reject(new Error(`Unsupported file format: .${ext}. Use .csv, .xls, or .xlsx`));
+}
 
 /**
  * Parse a CSV file and return cleaned data
@@ -23,6 +41,102 @@ export function parseCSV(file) {
 }
 
 /**
+ * Parse an Excel file (.xls, .xlsx) and return cleaned data
+ * Reads the first sheet by default, or all sheets if multi-sheet
+ */
+export function parseExcel(file, options = {}) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+
+        // Use specified sheet or first sheet
+        const sheetName = options.sheetName || workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+
+        if (!worksheet) {
+          reject(new Error(`Sheet "${sheetName}" not found. Available: ${workbook.SheetNames.join(', ')}`));
+          return;
+        }
+
+        // Convert to JSON with headers
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, {
+          defval: null,
+          raw: false, // format dates as strings
+        });
+
+        // Normalize headers (lowercase, underscores)
+        const normalizedData = jsonData.map(row => {
+          const normalized = {};
+          Object.entries(row).forEach(([key, value]) => {
+            const normalKey = key.trim().toLowerCase().replace(/\s+/g, '_');
+            normalized[normalKey] = value;
+          });
+          return normalized;
+        });
+
+        resolve({
+          data: normalizedData,
+          errors: [],
+          meta: {
+            fields: Object.keys(normalizedData[0] || {}),
+            sheetName,
+            totalSheets: workbook.SheetNames.length,
+            allSheets: workbook.SheetNames,
+          },
+        });
+      } catch (err) {
+        reject(new Error(`Failed to parse Excel file: ${err.message}`));
+      }
+    };
+
+    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+/**
+ * Parse Excel file and return all sheets as separate datasets
+ */
+export function parseExcelAllSheets(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+
+        const sheets = {};
+        workbook.SheetNames.forEach(sheetName => {
+          const worksheet = workbook.Sheets[sheetName];
+          const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: null, raw: false });
+
+          sheets[sheetName] = jsonData.map(row => {
+            const normalized = {};
+            Object.entries(row).forEach(([key, value]) => {
+              const normalKey = key.trim().toLowerCase().replace(/\s+/g, '_');
+              normalized[normalKey] = value;
+            });
+            return normalized;
+          });
+        });
+
+        resolve(sheets);
+      } catch (err) {
+        reject(new Error(`Failed to parse Excel file: ${err.message}`));
+      }
+    };
+
+    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+/**
  * Parse CSV string directly
  */
 export function parseCSVString(csvString) {
@@ -34,6 +148,12 @@ export function parseCSVString(csvString) {
   });
   return results.data;
 }
+
+/**
+ * Get list of supported file extensions
+ */
+export const SUPPORTED_EXTENSIONS = ['.csv', '.xls', '.xlsx', '.xlsb', '.xlsm', '.tsv'];
+export const SUPPORTED_ACCEPT = '.csv,.xls,.xlsx,.xlsb,.xlsm,.tsv';
 
 /**
  * Normalize order data from Shopdeck export

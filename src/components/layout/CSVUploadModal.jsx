@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import { X, Upload, FileText, CheckCircle2, AlertCircle, Trash2, HardDrive, RotateCcw, Files } from 'lucide-react';
-import { parseCSV, normalizeOrderData, normalizeDispatchedData, normalizeCashflowData, normalizeProductData, normalizeCustomerData, normalizeWhatsAppData, normalizeTaxData } from '../../utils/csvParser';
+import { parseFile, normalizeOrderData, normalizeDispatchedData, normalizeCashflowData, normalizeProductData, normalizeCustomerData, normalizeWhatsAppData, normalizeTaxData, SUPPORTED_ACCEPT } from '../../utils/csvParser';
 import { useDashboard } from '../../context/DashboardContext';
 import { clearStorage, getStorageMeta } from '../../utils/storage';
 
@@ -13,6 +13,8 @@ const reportTypes = [
   { id: 'whatsapp', label: 'WhatsApp HSM Report', normalizer: normalizeWhatsAppData, keywords: ['whatsapp', 'hsm', 'campaign'] },
   { id: 'tax', label: 'Tax Report', normalizer: normalizeTaxData, keywords: ['tax', 'gst'] },
 ];
+
+const SUPPORTED_FILE_TYPES = ['.csv', '.xls', '.xlsx', '.xlsb', '.xlsm'];
 
 /**
  * Try to auto-detect report type from filename
@@ -47,17 +49,20 @@ export default function CSVUploadModal({ isOpen, onClose }) {
     const reportType = reportTypes.find(r => r.id === type);
 
     try {
-      const result = await parseCSV(file);
+      const result = await parseFile(file);
       const normalizedData = reportType.normalizer(result.data);
 
       setData(prev => ({ ...prev, [type]: normalizedData }));
 
+      const ext = file.name.split('.').pop().toUpperCase();
       return {
         filename: file.name,
         type: reportType.label,
         typeId: type,
         records: normalizedData.length,
         status: 'success',
+        format: ext,
+        sheetInfo: result.meta?.totalSheets > 1 ? `Sheet: ${result.meta.sheetName} (${result.meta.totalSheets} total)` : null,
       };
     } catch (err) {
       return {
@@ -78,13 +83,14 @@ export default function CSVUploadModal({ isOpen, onClose }) {
 
     const results = [];
     for (const file of files) {
-      if (!file.name.endsWith('.csv')) {
+      const ext = '.' + file.name.split('.').pop().toLowerCase();
+      if (!SUPPORTED_FILE_TYPES.includes(ext)) {
         results.push({
           filename: file.name,
           type: 'Unknown',
           records: 0,
           status: 'error',
-          error: 'Not a CSV file',
+          error: `Unsupported format (${ext}). Use .csv, .xls, or .xlsx`,
         });
         continue;
       }
@@ -224,7 +230,7 @@ export default function CSVUploadModal({ isOpen, onClose }) {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".csv"
+              accept={SUPPORTED_ACCEPT}
               multiple
               onChange={handleFileInput}
               className="hidden"
@@ -251,10 +257,10 @@ export default function CSVUploadModal({ isOpen, onClose }) {
                   <div className="w-16 h-16 mx-auto mb-3 bg-gray-100 rounded-full flex items-center justify-center">
                     <Upload size={28} className="text-gray-400" />
                   </div>
-                  <p className="text-sm font-semibold text-gray-700">Drag & drop CSV files here</p>
+                  <p className="text-sm font-semibold text-gray-700">Drag & drop files here</p>
                   <p className="text-xs text-gray-500 mt-1">or click to browse</p>
                   <p className="text-xs text-gray-400 mt-3">
-                    Supports multiple files • Auto-saves to browser storage
+                    Supports <span className="font-medium">.csv, .xls, .xlsx</span> • Multiple files • Auto-saves to browser
                   </p>
                 </>
               )}
@@ -296,7 +302,7 @@ export default function CSVUploadModal({ isOpen, onClose }) {
                         result.status === 'success' ? 'text-emerald-600' : 'text-rose-600'
                       }`}>
                         {result.status === 'success'
-                          ? `${result.records} records → ${result.type}`
+                          ? `${result.records} records → ${result.type}${result.format ? ` (${result.format})` : ''}${result.sheetInfo ? ` • ${result.sheetInfo}` : ''}`
                           : result.error
                         }
                       </p>
